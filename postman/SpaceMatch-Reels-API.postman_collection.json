@@ -1,0 +1,1520 @@
+{
+  "info": {
+    "_postman_id": "795039eb-0806-5a7e-932b-a48e187542f2",
+    "name": "SpaceMatch Reel Analytics API",
+    "description": "Hub API (`/v1`) for SpaceMatch Reel Analytics.\n\n**Start here:** select the *SpaceMatch Reels - Local* (or *Render*) environment, then run folder **0. Setup** once. It logs in to the dashboard as an agent and creates that agent's API key, saved to `apiKey`. Every `/v1` request sends it as `Authorization: Bearer {{apiKey}}` (set on the collection).\n\nIDs chain automatically: *Create property* saves `propertyId`, *Add a link* saves `linkId`, refreshes save `refreshId`. Dashboard (`/api/...`) requests fetch a fresh CSRF token automatically (collection pre-request script).\n\nFull reference: `{{baseUrl}}/api/docs`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{apiKey}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Dashboard routes (/api/...) need a CSRF token that matches the session cookie.",
+          "// Fetch a fresh one before every non-GET dashboard request, so it never goes stale",
+          "// (switching baseUrl, redeploys, logging in all start a new session).",
+          "const path = pm.request.url.getPath();",
+          "// /v1 requests authenticate with the API key only (not the login session).",
+          "if (path.startsWith('/v1/') && !path.startsWith('/v1/health') && !pm.environment.get('apiKey')) {",
+          "  throw new Error('apiKey is empty - run \"0. Setup > Create API key\" first (logging in clears the old key).');",
+          "}",
+          "if (pm.request.method !== 'GET' && path.startsWith('/api/')) {",
+          "  pm.sendRequest({ url: pm.environment.get('baseUrl') + '/api/me', method: 'GET' }, (err, res) => {",
+          "    if (err || res.code !== 200) { console.warn('Could not refresh CSRF token', err || res.code); return; }",
+          "    pm.environment.set('csrf', res.json().csrf);",
+          "  });",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Setup (dashboard login + API key)",
+      "description": "Run these once per agent. They use the dashboard session (cookie + CSRF), not the API key.\n\n1. **Sign up agent** creates the agent in `agentEmail` (a 409 means it already exists - fine).\n2. **Log in agent** - also clears the previous `apiKey`, so a key from another agent is never reused.\n3. **Create API key** stores the new secret in `apiKey`.\n\n**The API key decides whose data `/v1` touches.** Properties created with it belong to the agent who created the key - the agent you logged in as in step 2. Switching agents? Log in and create a key again.",
+      "item": [
+        {
+          "name": "Get CSRF token",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "me"
+              ]
+            },
+            "description": "Optional - every dashboard request fetches a fresh token itself."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));",
+                  "pm.environment.set('csrf', pm.response.json().csrf);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sign up agent",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrf}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/signup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "signup"
+              ]
+            },
+            "description": "Creates an agent account. 409 = already registered (continue with Log in).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{agentName}}\",\n  \"email\": \"{{agentEmail}}\",\n  \"password\": \"{{agentPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of [200, 409]', () => pm.expect(pm.response.code).to.be.oneOf([200, 409]));",
+                  "if (pm.response.code === 200) pm.environment.set('csrf', pm.response.json().csrf);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Log in agent",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrf}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{agentEmail}}\",\n  \"password\": \"{{agentPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));",
+                  "pm.environment.set('csrf', pm.response.json().csrf);",
+                  "// A key belongs to one agent: drop the old one so the next /v1 calls can't act as someone else.",
+                  "pm.environment.unset('apiKey'); pm.environment.unset('apiKeyId'); pm.environment.unset('propertyId'); pm.environment.unset('linkId');",
+                  "pm.test('Logged in as agent', () => pm.expect(pm.response.json().user.role).to.equal('agent'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create API key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrf}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/api-keys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "api-keys"
+              ]
+            },
+            "description": "The secret is returned only here. It is saved to the `apiKey` environment variable.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman\",\n  \"scopes\": [\n    \"properties:read\",\n    \"properties:write\",\n    \"socials:read\",\n    \"socials:write\",\n    \"refresh:write\",\n    \"logs:read\"\n  ],\n  \"environment\": \"production\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));",
+                  "const k = pm.response.json();",
+                  "pm.environment.set('apiKey', k.secret);",
+                  "pm.environment.set('apiKeyId', k.id);",
+                  "pm.test('Secret returned once', () => pm.expect(k.secret).to.include('sk_'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List API keys",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/api-keys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "api-keys"
+              ]
+            },
+            "description": "Secrets are never listed, only the prefix."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));",
+                  "pm.test('No secrets in the list', () => pm.expect(JSON.stringify(pm.response.json())).to.not.include(pm.environment.get('apiKey')));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "auth": {
+        "type": "noauth"
+      }
+    },
+    {
+      "name": "1. System",
+      "description": "Health (no key) and the daily refresh schedule.",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "health"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));",
+                  "pm.test('ok', () => pm.expect(pm.response.json().ok).to.equal(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh schedule",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/settings/refresh-schedule",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "settings",
+                "refresh-schedule"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));",
+                  "pm.test('Has timezone', () => pm.expect(pm.response.json().timezone).to.be.ok);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Properties",
+      "description": "A property is an address plus its reel links. At least one link is required; several links for the same platform are fine.",
+      "item": [
+        {
+          "name": "Create property",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/properties",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "properties"
+              ]
+            },
+            "description": "`address` + `links` (at least one). One bad link -> 422 and nothing is saved. New links are read right away (`refresh` in the response). Saves `propertyId`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"address\": \"1620 N Hoyne Ave, Chicago, IL 60647\",\n  \"links\": [\n    \"https://www.instagram.com/reel/DTOz5t5jLQH/\",\n    \"https://www.instagram.com/reel/DTOz5t5jLQH2/\",\n    \"https://vt.tiktok.com/ZSpaGf8Yp/\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.expect(pm.response.code).to.equal(201));",
+                  "const p = pm.response.json();",
+                  "pm.environment.set('propertyId', p.id);",
+                  "if (p.refresh) pm.environment.set('refreshId', p.refresh.id);",
+                  "pm.test('Has links', () => pm.expect(p.links.length).to.equal(3));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get property (with links)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/properties/{{propertyId}}?include=links,analytics",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "properties",
+                "{{propertyId}}"
+              ],
+              "query": [
+                {
+                  "key": "include",
+                  "value": "links,analytics"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List properties",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/properties?limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "properties"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Filters: `active`, `q` (address), `updated_since`. Paging: `limit`, `cursor`. `include=links,analytics`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));",
+                  "pm.test('Has items', () => pm.expect(pm.response.json().items).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update address",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/properties/{{propertyId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "properties",
+                "{{propertyId}}"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"address\": \"1622 N Hoyne Ave, Chicago, IL 60647\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));",
+                  "pm.test('Address updated', () => pm.expect(pm.response.json().address).to.include('1622'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Archive",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/properties/{{propertyId}}/archive",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "properties",
+                "{{propertyId}}",
+                "archive"
+              ]
+            },
+            "description": "Sold/withdrawn: stops daily refreshes, keeps history."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));",
+                  "pm.test('Inactive', () => pm.expect(pm.response.json().active).to.equal(false));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unarchive",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/properties/{{propertyId}}/unarchive",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "properties",
+                "{{propertyId}}",
+                "unarchive"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));",
+                  "pm.test('Active', () => pm.expect(pm.response.json().active).to.equal(true));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Links",
+      "description": "A property's reel links. The platform is detected from each URL.",
+      "item": [
+        {
+          "name": "Validate a link",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/links/validate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "links",
+                "validate"
+              ]
+            },
+            "description": "Checks a link without saving or reading it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://vt.tiktok.com/ZSpaGf8Yp/\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));",
+                  "pm.test('Valid', () => pm.expect(pm.response.json().valid).to.equal(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get links",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/properties/{{propertyId}}/links",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "properties",
+                "{{propertyId}}",
+                "links"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Add a link",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/properties/{{propertyId}}/links",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "properties",
+                "{{propertyId}}",
+                "links"
+              ]
+            },
+            "description": "Attach one more link. Saves `linkId`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://www.youtube.com/shorts/JX1mw5HWeTM\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.expect(pm.response.code).to.equal(201));",
+                  "pm.environment.set('linkId', pm.response.json().link.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Remove a link",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/properties/{{propertyId}}/links/{{linkId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "properties",
+                "{{propertyId}}",
+                "links",
+                "{{linkId}}"
+              ]
+            },
+            "description": "History is kept. The last link can't be removed (409)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 204', () => pm.expect(pm.response.code).to.equal(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Replace all links",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/properties/{{propertyId}}/links",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "properties",
+                "{{propertyId}}",
+                "links"
+              ]
+            },
+            "description": "The property's links become exactly this list (at least one). One bad link -> 422, nothing saved.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"links\": [\n    \"https://www.instagram.com/reel/DTOz5t5jLQH/\",\n    \"https://www.facebook.com/share/r/1cHAH3Wqdg/\",\n    \"https://vt.tiktok.com/ZSpaGf8Yp/\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));",
+                  "pm.test('3 links', () => pm.expect(pm.response.json().links.length).to.equal(3));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Link history",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/properties/{{propertyId}}/links/history",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "properties",
+                "{{propertyId}}",
+                "links",
+                "history"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Analytics",
+      "description": "Latest numbers per link. Counts are `null` until a read succeeds.",
+      "item": [
+        {
+          "name": "Property analytics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/properties/{{propertyId}}/analytics",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "properties",
+                "{{propertyId}}",
+                "analytics"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));",
+                  "pm.test('Has reels', () => pm.expect(pm.response.json().reels).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Property analytics (one platform)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/properties/{{propertyId}}/analytics?platform=instagram",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "properties",
+                "{{propertyId}}",
+                "analytics"
+              ],
+              "query": [
+                {
+                  "key": "platform",
+                  "value": "instagram"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bulk analytics (updated since)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/analytics?updated_since=2026-01-01T00:00:00Z&limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "analytics"
+              ],
+              "query": [
+                {
+                  "key": "updated_since",
+                  "value": "2026-01-01T00:00:00Z"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Or `?property_ids=a,b,c`. Use after the morning run."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Refreshes",
+      "description": "Refresh returns 202 with a refresh; poll **Get refresh** until `done`, `partial` or `failed`. If one is already queued/running for the property, that one is returned. A second manual refresh within the cooldown (10 min) returns 429 with `Retry-After`.\n\n**Note:** with `REFRESH_WORKER=on` the server really opens a hidden browser and reads the platforms.",
+      "item": [
+        {
+          "name": "Refresh now",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/properties/{{propertyId}}/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "properties",
+                "{{propertyId}}",
+                "refresh"
+              ]
+            },
+            "description": "Optional `platforms: [\"instagram\"]` to read only some platforms.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requested_by\": \"agent@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of [202, 429]', () => pm.expect(pm.response.code).to.be.oneOf([202, 429]));",
+                  "if (pm.response.code === 202) pm.environment.set('refreshId', pm.response.json().refresh.id);",
+                  "if (pm.response.code === 429) console.log('Cooldown - retry after', pm.response.headers.get('Retry-After'), 's');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get refresh (poll)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/refreshes/{{refreshId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "refreshes",
+                "{{refreshId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));",
+                  "pm.test('Has status', () => pm.expect(pm.response.json().status).to.be.oneOf(['queued','running','done','partial','failed','cancelled']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List refreshes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/refreshes?property_id={{propertyId}}&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "refreshes"
+              ],
+              "query": [
+                {
+                  "key": "property_id",
+                  "value": "{{propertyId}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Filters: `property_id`, `trigger`, `status`, `from`, `to`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bulk refresh",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/refreshes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "refreshes"
+              ]
+            },
+            "description": "Or `{\"all_active\": true}`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"property_ids\": [\n    \"{{propertyId}}\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 202', () => pm.expect(pm.response.code).to.equal(202));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cancel refresh",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/refreshes/{{refreshId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "refreshes",
+                "{{refreshId}}",
+                "cancel"
+              ]
+            },
+            "description": "Only queued refreshes can be cancelled (409 otherwise)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of [200, 409]', () => pm.expect(pm.response.code).to.be.oneOf([200, 409]));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Records & logs",
+      "description": "History = every good read. Logs = every attempt, failures included.",
+      "item": [
+        {
+          "name": "History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/properties/{{propertyId}}/history?limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "properties",
+                "{{propertyId}}",
+                "history"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Filters: `platform`, `from`, `to`, `interval=raw|day`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "History (one row per day)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/properties/{{propertyId}}/history?interval=day",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "properties",
+                "{{propertyId}}",
+                "history"
+              ],
+              "query": [
+                {
+                  "key": "interval",
+                  "value": "day"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/properties/{{propertyId}}/logs?limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "properties",
+                "{{propertyId}}",
+                "logs"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Filters: `platform`, `status=ok|failed`, `from`, `to`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logs (failed only)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/properties/{{propertyId}}/logs?status=failed",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "properties",
+                "{{propertyId}}",
+                "logs"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "failed"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. Error examples",
+      "description": "What the Hub should expect. Every error is `{\"error\": {code, message, field}}`.",
+      "item": [
+        {
+          "name": "401 - no API key",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/properties",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "properties"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.expect(pm.response.code).to.equal(401));",
+                  "pm.test('code unauthorized', () => pm.expect(pm.response.json().error.code).to.equal('unauthorized'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - property without links",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/properties",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "properties"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"address\": \"1 No Links St\",\n  \"links\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.expect(pm.response.code).to.equal(422));",
+                  "pm.test('field links', () => pm.expect(pm.response.json().error.field).to.equal('links'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - invalid link",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/properties",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "properties"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"address\": \"2 Bad Link St\",\n  \"links\": [\n    \"https://www.instagram.com/reel/DTOz5t5jLQH/\",\n    \"https://example.com/video/1\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.expect(pm.response.code).to.equal(422));",
+                  "const e = pm.response.json().error;",
+                  "pm.test('invalid_link on links[1]', () => { pm.expect(e.code).to.equal('invalid_link'); pm.expect(e.field).to.equal('links[1]'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 - unknown property",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/properties/prop_doesnotexist",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "properties",
+                "prop_doesnotexist"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.expect(pm.response.code).to.equal(404));",
+                  "pm.test('code not_found', () => pm.expect(pm.response.json().error.code).to.equal('not_found'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "8. Cleanup (optional)",
+      "description": "Deletes the test property. Revoking the key makes /v1 calls fail until you create a new one.",
+      "item": [
+        {
+          "name": "Delete property",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/properties/{{propertyId}}?hard=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "properties",
+                "{{propertyId}}"
+              ],
+              "query": [
+                {
+                  "key": "hard",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "`hard=true` also deletes its history and logs."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 204', () => pm.expect(pm.response.code).to.equal(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Revoke API key",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrf}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/api-keys/{{apiKeyId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "api-keys",
+                "{{apiKeyId}}"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.expect(pm.response.code).to.equal(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": []
+}

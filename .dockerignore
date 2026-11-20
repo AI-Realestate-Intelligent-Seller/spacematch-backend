@@ -1,0 +1,13 @@
+# Secrets and local state never go into the image
+.env
+.dev-keys.json
+data/
+# Local tooling
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.git/
+postman/
+tests/
+env.yaml

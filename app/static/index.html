@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f8fc">
+  <meta name="description" content="SpaceMatch Reels analytics">
+  <title>SpaceMatch Reels</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script defer src="/static/app.js"></script>
+</head>
+<body>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <!-- Shown only if app.js never starts (failed to load or crashed early) -->
+  <div id="boot-error" class="login-view hidden"><div class="login-box"><h1>Couldn't load SpaceMatch</h1><p class="muted">The app script failed to start. Reload the page (Ctrl+Shift+R). If it keeps happening, check the browser console.</p><p><code id="boot-error-detail"></code></p></div></div>
+  <noscript><div class="login-view"><div class="login-box"><h1>JavaScript required</h1><p class="muted">Enable JavaScript to use SpaceMatch.</p></div></div></noscript>
+  <script>
+    window.addEventListener('error', e => { if (!window.__appStarted) { document.getElementById('boot-error-detail').textContent = e.message || ''; document.getElementById('boot-error').classList.remove('hidden'); } });
+    setTimeout(() => { if (!window.__appStarted) document.getElementById('boot-error').classList.remove('hidden'); }, 8000);
+  </script>
+
+  <!-- Login, sign-up and invite pages -->
+  <div id="auth-layout" class="login-view hidden"><div id="auth-root" class="login-box"></div></div>
+
+  <!-- Signed-in app -->
+  <div id="app-layout" class="shell hidden">
+    <aside class="sidebar">
+      <a class="brand" href="/properties" data-link><span class="mark">S</span><div><strong>SPACE<span>MATCH</span></strong><small>HUB</small></div></a>
+      <nav aria-label="Main navigation">
+        <a href="/properties" data-link data-nav="properties">▦ &nbsp; Properties</a>
+        <a href="/brokers" data-link data-nav="brokers" data-agent-only>◎ &nbsp; Brokers</a>
+        <a href="/api-keys" data-link data-nav="api-keys" data-agent-only>⚿ &nbsp; API keys</a>
+        <a href="/account" data-link data-nav="account">⚙ &nbsp; Account</a>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="user-box"><strong id="user-name"></strong><small id="user-email"></small><span id="user-role" class="tag tag-green"></span></div>
+        <button id="logout" class="secondary wide">Log out</button>
+      </div>
+    </aside>
+    <main class="main-content">
+      <div class="topline">
+        <div id="breadcrumb" class="breadcrumb"></div>
+        <nav class="mobile-nav" aria-label="Mobile navigation">
+          <a href="/properties" data-link>Properties</a>
+          <a href="/brokers" data-link data-agent-only>Brokers</a>
+          <a href="/api-keys" data-link data-agent-only>API keys</a>
+          <a href="/account" data-link>Account</a>
+          <button id="logout-mobile" class="secondary small">Log out</button>
+        </nav>
+      </div>
+      <div id="view"></div>
+    </main>
+  </div>
+
+  <div id="viewer" class="viewer hidden" role="dialog" aria-modal="true" aria-labelledby="viewer-title">
+    <div class="viewer-box">
+      <div class="viewer-head"><div><h3 id="viewer-title">Browser automation</h3><small id="viewer-current" class="muted"></small></div><div class="viewer-status"><span id="viewer-pill" class="tag tag-amber">RUNNING</span><span id="viewer-elapsed" class="muted"></span><button class="secondary" id="viewer-close">Close ×</button></div></div>
+      <div class="viewer-body"><div class="viewer-screen"><img id="viewer-img" alt="Live view of the automated browser"><div id="viewer-wait" class="viewer-wait">Starting browser…</div></div><ol id="viewer-log" class="viewer-log"></ol></div>
+    </div>
+  </div>
+
+  <div id="modal" class="viewer hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="viewer-box modal-box">
+      <div class="viewer-head"><h3 id="modal-title"></h3><button class="secondary" data-close-modal>Close ×</button></div>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+</body>
+</html>
