@@ -30,7 +30,7 @@ def request_reset(c, email=EMAIL):
 def test_full_reset_flow(mails):
     with new_client() as c:
         r = request_reset(c, '  Owner@Example.com ')
-        assert r.status_code == 200 and 'If an account exists' in r.json()['message']
+        assert r.status_code == 200 and r.json() == auth.RESET_SENT
         assert len(mails) == 1 and mails[0][0] == EMAIL and '1 hour' in mails[0][2]
         token = token_from(mails[0])
         assert c.get(f'/api/password-resets/{token}').json() == {'email': EMAIL}
@@ -81,10 +81,19 @@ def test_reset_logs_out_other_sessions(mails):
         assert other.get('/api/properties').status_code == 401
 
 
-def test_unknown_email_gets_same_answer_and_no_mail(mails):
+def test_unknown_email_is_reported_and_no_mail(mails):
     with new_client() as c:
         r = request_reset(c, 'nobody@example.com')
-        assert r.status_code == 200 and r.json() == auth.RESET_SENT and mails == []
+        assert r.status_code == 404 and r.json()['detail'] == auth.NO_ACCOUNT and mails == []
+
+
+def test_broker_without_password_is_told_to_use_invite(mails):
+    from app.db import storage
+    with storage.db() as db:
+        db.execute("INSERT INTO users(id,email,name,role,created_at) VALUES('b1','broker@example.com','Bea','broker','2026-01-01')")
+    with new_client() as c:
+        r = request_reset(c, 'broker@example.com')
+        assert r.status_code == 409 and r.json()['detail'] == auth.NOT_ACTIVATED and mails == []
 
 
 def test_reset_requests_are_rate_limited(mails):

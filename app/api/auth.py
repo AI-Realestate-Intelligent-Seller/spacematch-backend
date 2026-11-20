@@ -182,12 +182,14 @@ class ForgotPasswordRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
 
 
-RESET_SENT = {"ok": True, "message": "If an account exists for that email, we've sent a link to reset the password."}
+RESET_SENT = {"ok": True, "message": "We've sent a link to reset your password to your email."}
+NO_ACCOUNT = "No account found with this email address"
+NOT_ACTIVATED = "This account hasn't been set up yet - use the invite link from your email to set a password"
 
 
 @router.post("/auth/forgot-password", dependencies=[Depends(check_csrf)])
 def forgot_password(body: ForgotPasswordRequest, request: Request):
-    """Emails a one-time reset link. Answers the same whether or not the email has an account."""
+    """Emails a one-time reset link. Unknown emails get a 404 (rate limits still apply per email and IP)."""
     email = (body.email or "").strip().lower()
     ip = request.client.host if request.client else "unknown"
     keys = (f"email:{email}", f"ip:{ip}")
@@ -195,8 +197,10 @@ def forgot_password(body: ForgotPasswordRequest, request: Request):
         raise HTTPException(429, "Too many reset requests - try again in 15 minutes")
     reset_limiter.hit(*keys)
     user = get_one("SELECT * FROM users WHERE email=?", (email,))
-    if not user or not user.get("password_hash"):  # unknown email or a broker who hasn't accepted the invite
-        return RESET_SENT
+    if not user:
+        raise HTTPException(404, NO_ACCOUNT)
+    if not user.get("password_hash"):  # a broker who hasn't accepted the invite yet
+        raise HTTPException(409, NOT_ACTIVATED)
     token = secrets.token_urlsafe(32)
     with db() as c:
         c.execute("UPDATE password_resets SET used_at=? WHERE user_id=? AND used_at IS NULL", (now(), user["id"]))
