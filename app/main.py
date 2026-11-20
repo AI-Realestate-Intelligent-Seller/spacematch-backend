@@ -16,14 +16,12 @@ import re
 import time
 import uuid
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -42,10 +40,6 @@ from app.api.auth import check_csrf, current_user, ensure_csrf, public_user, req
 from app.core.settings import BASE_URL, IS_LOCAL, SESSION_SECRET
 from app.db.storage import db, get_many, get_one, init_db, now, owner_reels
 
-ROOT = Path(__file__).resolve().parent  # app/ (holds static/)
-INDEX = ROOT / "static" / "index.html"
-
-
 @asynccontextmanager
 async def lifespan(_app):
     rf.start_background()  # refresh queue worker + daily schedule (REFRESH_WORKER=off disables)
@@ -57,7 +51,6 @@ app = FastAPI(title="SpaceMatch Reel Analytics", version="0.6.0", docs_url="/api
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET,
                    session_cookie="spacematch_reels_session", max_age=14 * 24 * 3600,
                    same_site="lax", https_only=BASE_URL.startswith("https://"))
-app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 app.include_router(auth.router)
 app.include_router(brokers.router)
 app.include_router(recovery.router)
@@ -410,34 +403,10 @@ def export_property_reel_report(property_id: str, user: dict = Depends(current_u
                              "Cache-Control": "private, no-store"})
 
 
-# ------------------------------------------------------ frontend routes ----
-# The dashboard is a single page app; these paths all serve index.html and app.js
-# picks the view (and redirects to /login when needed).
+# --------------------------------------------------------------- root ----
+# API only: the dashboard is the Next.js app in ../frontend (it proxies /api/* here). Page URLs such as
+# /login or /properties are not served by this backend and answer 404.
 
-SPA_PATHS = ("/", "/login", "/signup", "/forgot-password", "/recover", "/reset-password/{token}", "/invite/{token}", "/properties", "/properties/{property_id}", "/brokers",
-             "/api-keys", "/account")
-STATIC_ASSETS = ("app.js", "style.css")
-
-
-def asset_version(name: str) -> str:
-    return str((ROOT / "static" / name).stat().st_mtime_ns)
-
-
-def spa_index():
-    """index.html with versioned asset URLs, so browsers never pair new HTML with a stale cached app.js."""
-    html = INDEX.read_text(encoding="utf-8")
-    for name in STATIC_ASSETS:
-        html = html.replace(f'"/static/{name}"', f'"/static/{name}?v={asset_version(name)}"')
-    return Response(html, media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-cache"})
-
-
-@app.middleware("http")
-async def revalidate_static(request: Request, call_next):
-    response = await call_next(request)
-    if request.url.path.startswith("/static/"):
-        response.headers["Cache-Control"] = "no-cache"  # always revalidate (cheap 304 via ETag)
-    return response
-
-
-for _path in SPA_PATHS:
-    app.add_api_route(_path, spa_index, methods=["GET"], include_in_schema=False)
+@app.get("/", include_in_schema=False)
+def root():
+    return {"service": "SpaceMatch API", "docs": "/api/docs", "health": "/health", "hub_api": "/v1"}

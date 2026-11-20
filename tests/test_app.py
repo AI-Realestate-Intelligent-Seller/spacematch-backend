@@ -142,16 +142,16 @@ def test_edit_and_delete_property(client):
     assert storage.get_one('SELECT count(*) n FROM reels')['n'] == 0
 
 
-def test_spa_routes_serve_the_app(db_path):
+def test_backend_serves_the_api_only(db_path):
+    """The dashboard is the Next.js frontend; this backend serves no pages or static files."""
     with new_client() as c:
-        for path in ('/', '/login', '/signup', '/invite/abc123', '/properties', '/properties/xyz', '/brokers'):
-            r = c.get(path)
-            assert r.status_code == 200 and '<div id="view">' in r.text, path
-        assert c.get('/api/nope').status_code == 404
-        # Versioned asset URLs + revalidation: a stale cached app.js must never meet a new index.html
-        html = c.get('/login').text
-        assert '/static/app.js?v=' in html and '/static/style.css?v=' in html
-        assert c.get('/static/app.js').headers['cache-control'] == 'no-cache'
+        assert c.get('/').json()['docs'] == '/api/docs'
+        for path in ('/login', '/signup', '/invite/abc123', '/properties', '/properties/xyz', '/brokers',
+                     '/static/app.js', '/static/index.html'):
+            assert c.get(path).status_code == 404, path
+        assert c.get('/health').json()['ok'] is True
+        assert c.get('/api/me').status_code == 200
+        assert c.get('/api/docs').status_code == 200
 
 
 def test_add_property_needs_address_and_at_least_one_link(client):

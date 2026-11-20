@@ -21,7 +21,7 @@ You can **watch browser reads live** inside the app, or in a real Chromium windo
 ## Deployment
 
 - **Live (Render):** https://space-match-zxji.onrender.com
-  - Dashboard: https://space-match-zxji.onrender.com/login
+  - Dashboard: the Next.js frontend (`spacematch-frontend`); this backend serves the API only.
   - Hub API: `https://space-match-zxji.onrender.com/v1` (health check: `/v1/health`)
   - API reference: https://space-match-zxji.onrender.com/api/docs
 - On Render, set `BASE_URL=https://space-match-zxji.onrender.com` so emailed links (invites, password resets) point there.
@@ -107,7 +107,8 @@ talks to the frontend's domain: the session cookie is first-party and no CORS se
     `POST /api/account/recovery-email/remove` `{password}` · `POST /api/account/email` `{email, password}` · `POST /api/account/email/verify` `{code}` ·
     `POST /api/account/{recovery-email|email}/resend|cancel` · `POST /api/auth/recover` `{email, recovery_email}` ·
     `POST /api/auth/recover/verify` `{email, code}` · `POST /api/auth/recover/password` `{password}`.
-- Front-end routes: `/login`, `/signup`, `/forgot-password`, `/recover`, `/reset-password/:token`, `/invite/:token`, `/properties`, `/properties/:id`, `/brokers`, `/api-keys`, `/account`.
+- **API only:** the pages (`/login`, `/properties`, `/reset-password/:token`, `/invite/:token`, …) live in the Next.js
+  frontend, which proxies `/api/*` to this backend. Here those paths answer 404; `/` returns a short JSON pointer to `/api/docs`.
 - Code: `app/api/auth.py` (sessions, sign-up, login, password reset, invites), `app/api/access.py` (permission rules), `app/api/brokers.py` (broker management), `app/core/security.py`, `app/core/mailer.py`.
 
 ## Hub API (v0.6, `/v1`)
@@ -223,7 +224,8 @@ cp .env.example .env                 # Windows: Copy-Item .env.example .env
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Open `http://127.0.0.1:8000` — no sign-in.
+The API is at `http://127.0.0.1:8000` (reference: `/api/docs`). For the dashboard, run the frontend
+(`spacematch-frontend`, `npm run dev`) and open `http://localhost:3000`, with `BASE_URL=http://localhost:3000` in `.env`.
 
 1. Pick or add a property.
 2. Paste a public Instagram or Facebook Reel URL (username-style Instagram links and Facebook share links work) → **Add Reel**.
@@ -264,7 +266,7 @@ Waits 5 s between reels. Schedule it once a day with cron / Task Scheduler.
 
 ```
 app/
-  main.py            FastAPI app: dashboard API (/api), static files, startup
+  main.py            FastAPI app: dashboard API (/api), Hub API (/v1), startup
   api/               HTTP routers and request guards
     auth.py            sessions, sign-up, login, password reset
     recovery.py        recovery email, login email change, account recovery
@@ -283,7 +285,6 @@ app/
     youtube_api.py         YouTube Data API v3
   db/storage.py      SQLite / Postgres storage
   core/              settings (.env), password/token hashing, SMTP mailer
-  static/            dashboard (HTML/JS/CSS)
 scripts/             one-off commands: sync_all.py (daily cron), migrate_to_postgres.py
 tests/               pytest suite (browser mocked) - run `python -m pytest -q`
 postman/             Postman collection and environments
