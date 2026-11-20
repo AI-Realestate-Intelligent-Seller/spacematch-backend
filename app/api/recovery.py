@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 
 from app.api.auth import PasswordRequest, check_csrf, current_user, login_limiter, normalize_email, start_session
 from app.core.mailer import send_email
-from app.core.security import RateLimiter, hash_password, verify_password
+from app.core.security import RateLimiter, client_ip, hash_password, verify_password
 from app.core.settings import BASE_URL, SESSION_SECRET
 from app.db.storage import db, get_many, get_one, now, uid
 
@@ -56,10 +56,6 @@ def mask_email(email: str | None) -> str:
     name, _, domain = (email or "").partition("@")
     host, dot, tld = domain.rpartition(".")
     return f"{name[:1]}•••@{host[:1]}•••{dot}{tld}"
-
-
-def client_ip(request: Request) -> str:
-    return request.client.host if request.client else "unknown"
 
 
 def log_event(c, user_id: str, event: str, request: Request | None = None, detail: str | None = None):

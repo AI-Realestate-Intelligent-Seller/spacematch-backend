@@ -27,6 +27,48 @@ You can **watch browser reads live** inside the app, or in a real Chromium windo
 - On Render, set `BASE_URL=https://space-match-zxji.onrender.com` so emailed links (invites, password resets) point there.
 - Postman: import `postman/SpaceMatch-Reels-API.postman_collection.json` with the **SpaceMatch Reels - Render** environment (its `baseUrl` is already set to the URL above).
 
+### Vercel (backend for the Next.js frontend)
+
+The frontend (https://spacematch-frontend.vercel.app) proxies `/api/*` to this backend, so the browser only ever
+talks to the frontend's domain: the session cookie is first-party and no CORS setup is needed.
+
+- Import the `spacematch-backend` repo as a new Vercel project (framework: **Other** / auto-detected FastAPI).
+  Vercel serves `app/main.py` as a serverless function - no `vercel.json` needed.
+- **Dependencies come from `pyproject.toml`**, not `requirements.txt`: Vercel reads `pyproject.toml` first.
+  Add every new package to **both** files (the Dockerfile uses `requirements.txt`); `tests/test_vercel.py` fails if
+  they differ.
+- **Environment variables** (Project Settings → Environment Variables; redeploy after any change):
+
+  | Variable | |
+  |---|---|
+  | `BASE_URL` | **Required here:** `https://spacematch-frontend.vercel.app` - the app people open. Used for links in emails (invites, password resets) and secure cookies. Without it, it defaults to *this* project's URL and emailed links open the old built-in pages. |
+  | `DATABASE_URL` | Required. Supabase *Session pooler* string. The disk is read-only and temporary, so SQLite can't be used. |
+  | `SESSION_SECRET` | Required. A long random string. Changing it logs everyone out. |
+  | `TOKEN_ENCRYPTION_KEY` | Required. When sharing the database with another deployment, use the **same** key, or stored tokens can't be decrypted. |
+  | `SMTP_*`, `APIFY_TOKEN`, `YOUTUBE_API_KEY` | As in `.env.example`. |
+
+- Then in the **frontend** Vercel project set `BACKEND_URL` = this project's production URL (e.g.
+  `https://spacematch-backend.vercel.app`) and **redeploy the frontend** - the proxy target is fixed at build time.
+- Check: `https://<backend>/health` → `{"ok": true, "environment": "server"}`; then sign up on the frontend.
+- **Rate limits** use the visitor's IP from Vercel's `X-Forwarded-For` (`app/core/security.py: client_ip`).
+- **What differs from a normal server:**
+  - The refresh worker and daily schedule are **off** (serverless functions can't run background threads).
+    Run them on one other server, or schedule `scripts/sync_all.py`.
+  - The Playwright browser reads (Facebook, TikTok, and the Instagram/YouTube fallbacks) need Chromium, which
+    Vercel doesn't provide. Instagram through Apify and YouTube through the Data API work.
+  - Dashboard **Fetch** runs in a background thread and its progress is kept in memory; on serverless the next
+    poll can reach another instance ("Job not found"). Test it after deploying; if it's unreliable, run fetches
+    from a non-serverless backend (Render / Oracle VM).
+- **Troubleshooting** (Vercel → Project → Logs):
+
+  | Error | Cause and fix |
+  |---|---|
+  | Every request shows `FUNCTION_INVOCATION_FAILED` | The app crashed on start-up - the log has the real error. |
+  | `ModuleNotFoundError: No module named 'fastapi'` | `pyproject.toml` has no `dependencies` list, so Vercel installed nothing. |
+  | `Set DATABASE_URL ...` / `Set SESSION_SECRET ...` | That environment variable is missing. Add it and redeploy. |
+  | Frontend login works but you're logged out on every page | `BASE_URL` is `https://…` but the frontend is opened over `http://`, or `SESSION_SECRET` changed. |
+  | Emailed links open the backend's own pages | `BASE_URL` isn't set to the frontend URL. |
+
 ## Accounts and access (v0.5)
 
 | Role | How they join | Can do |
@@ -41,7 +83,7 @@ You can **watch browser reads live** inside the app, or in a real Chromium windo
   - The link works **once, for 1 hour**; requesting a new one cancels the previous link.
   - The new password **must differ from the current one** (422 otherwise).
   - After a reset, every other session for that account is logged out, and the browser that reset it is logged in.
-  - The answer is the same whether or not the email has an account, so the form can't be used to discover accounts. Requests are limited to 5 per 15 minutes per email and per IP.
+  - An email with no account gets 404 "No account found with this email address"; a broker who hasn't accepted their invite gets 409 (use the invite link). Requests are limited to 5 per 15 minutes per email and per IP.
   - Without SMTP settings, the reset email is printed to the server console.
   - API: `POST /api/auth/forgot-password` `{email}` · `GET /api/password-resets/{token}` · `POST /api/password-resets/{token}` `{password}`.
 - Invite emails go out over SMTP (`SMTP_*` in `.env`). Without SMTP, the invite is printed to the server console and the agent gets a copyable link.

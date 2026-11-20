@@ -117,3 +117,22 @@ def test_one_account_per_email(db_path):
         for email in (EMAIL, 'OWNER@example.com', '  owner@EXAMPLE.com '):
             r = c.post('/api/auth/signup', headers=csrf(c), json={'name': 'Again', 'email': email, 'password': 'other-pass-9'})
             assert r.status_code == 409 and 'already exists' in r.json()['detail']
+
+
+def test_unreachable_mail_server_still_answers_200(db_path, monkeypatch):
+    """A blocked or down mail server fails with OSError 101. The reset must not 500."""
+    from app.core import mailer
+
+    def unreachable(*_):
+        raise OSError(101, 'Network is unreachable')
+    monkeypatch.setattr(mailer, 'SMTP_HOST', 'smtp.example.com')
+    monkeypatch.setattr(mailer, '_send_smtp', unreachable)
+    monkeypatch.setattr(auth, 'send_email', mailer.send_email)
+    auth.reset_limiter._hits.clear()
+    with new_client() as c:
+        signup(c, email=EMAIL, password=OLD)
+    with new_client() as c:
+        known, unknown = request_reset(c), request_reset(c, 'nobody@example.com')
+    assert known.status_code == 200 and known.json() == auth.RESET_SENT
+    assert unknown.status_code == 404
+

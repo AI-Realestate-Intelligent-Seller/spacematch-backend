@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.core.mailer import send_email
-from app.core.security import DUMMY_HASH, RateLimiter, hash_password, hash_token, verify_password
+from app.core.security import DUMMY_HASH, RateLimiter, client_ip, hash_password, hash_token, verify_password
 from app.core.settings import BASE_URL
 from app.db.storage import adopt_legacy_data, db, get_one, now, uid
 
@@ -129,7 +129,7 @@ def signup(body: SignupRequest, request: Request):
 @router.post("/auth/login", dependencies=[Depends(check_csrf)])
 def login(body: LoginRequest, request: Request):
     email = (body.email or "").strip().lower()
-    ip = request.client.host if request.client else "unknown"
+    ip = client_ip(request)
     keys = (f"email:{email}", f"ip:{ip}")
     if login_limiter.blocked(*keys):
         raise HTTPException(429, "Too many failed attempts - try again in 15 minutes",
@@ -191,7 +191,7 @@ NOT_ACTIVATED = "This account hasn't been set up yet - use the invite link from 
 def forgot_password(body: ForgotPasswordRequest, request: Request):
     """Emails a one-time reset link. Unknown emails get a 404 (rate limits still apply per email and IP)."""
     email = (body.email or "").strip().lower()
-    ip = request.client.host if request.client else "unknown"
+    ip = client_ip(request)
     keys = (f"email:{email}", f"ip:{ip}")
     if reset_limiter.blocked(*keys):
         raise HTTPException(429, "Too many reset requests - try again in 15 minutes")

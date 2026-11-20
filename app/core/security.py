@@ -1,4 +1,4 @@
-"""Password hashing, one-time tokens and a small login rate limiter (stdlib only)."""
+"""Password hashing, one-time tokens, a small login rate limiter and the visitor's IP."""
 from __future__ import annotations
 
 import base64
@@ -8,6 +8,8 @@ import secrets
 import threading
 import time
 from collections import defaultdict, deque
+
+from app.core.settings import ON_VERCEL
 
 _N, _R, _P, _DKLEN = 2 ** 14, 8, 1, 32
 
@@ -43,6 +45,20 @@ def verify_password(password: str, stored: str | None) -> bool:
 
 # Verifying against this when the email is unknown keeps response times similar.
 DUMMY_HASH = hash_password(secrets.token_urlsafe(16))
+
+
+def client_ip(request) -> str:
+    """The visitor's IP, for rate limits and the account audit log.
+
+    On Vercel the app sits behind Vercel's proxy (and, from the frontend, the Next.js /api rewrite), so the
+    socket address is Vercel's. Vercel sets X-Forwarded-For / X-Real-IP to the real client address itself.
+    Elsewhere uvicorn's --proxy-headers (Dockerfile) already puts the forwarded address in request.client.
+    """
+    if ON_VERCEL:
+        forwarded = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+        if forwarded or request.headers.get("x-real-ip"):
+            return forwarded or request.headers["x-real-ip"].strip()
+    return request.client.host if request.client else "unknown"
 
 
 def new_token() -> str:
